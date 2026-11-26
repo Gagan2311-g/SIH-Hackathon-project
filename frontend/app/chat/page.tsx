@@ -71,7 +71,10 @@ function llmStatusPill(health: HealthReport | null): {
 }
 
 export default function ChatPage() {
-  const [messages, setMessages] = useState<ChatMessage[]>(loadMessages);
+  // Keep the server and first client render identical. Browser-only persisted
+  // history is restored after hydration below.
+  const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MESSAGE]);
+  const [hasLoadedMessages, setHasLoadedMessages] = useState(false);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [health, setHealth] = useState<HealthReport | null>(null);
@@ -91,14 +94,25 @@ export default function ChatPage() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isLoading]);
 
+  // Reading localStorage during the first render would make the browser markup
+  // differ from the server-rendered welcome state, causing a hydration error.
+  useEffect(() => {
+    const restoreTimer = window.setTimeout(() => {
+      setMessages(loadMessages());
+      setHasLoadedMessages(true);
+    }, 0);
+    return () => window.clearTimeout(restoreTimer);
+  }, []);
+
   // Persist conversation across reloads.
   useEffect(() => {
+    if (!hasLoadedMessages) return;
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
     } catch {
       /* storage full / private browsing — degrading gracefully */
     }
-  }, [messages]);
+  }, [hasLoadedMessages, messages]);
 
   // Poll backend health so the status pills stay truthful.
   useEffect(() => {
